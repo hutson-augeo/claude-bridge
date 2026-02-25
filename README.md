@@ -187,13 +187,67 @@ curl -X POST http://localhost:3333/actions/run \
 
 ## Microsoft / SharePoint Setup
 
-1. Register an app in the [Azure portal](https://portal.azure.com) under **App registrations**
-2. Add a redirect URI: `http://localhost:3333/auth/callback`
-3. Grant API permissions: `Files.ReadWrite.All`, `Sites.ReadWrite.All`
-4. Copy the **Client ID** and **Tenant ID** into `config.json`
-5. Open `http://localhost:3333/auth/login` in a browser to authenticate
+Claude Bridge can read, write, and search files in SharePoint and OneDrive via the Microsoft Graph API. Setup is two steps: register an Azure app (automated), then sign in once in a browser.
 
-Auth tokens are persisted to `tokenStorePath` and reloaded on restart, so you only need to authenticate once.
+### Automated setup (recommended)
+
+**Prerequisite:** [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`)
+
+```bash
+npm run setup:azure
+```
+
+The script will:
+
+1. Check that `az` is installed and log you in if needed
+2. Look for an existing `Claude Bridge` app registration in your tenant and offer to reuse it
+3. Create the app as a public client with `http://localhost:3333/auth/callback` as the redirect URI
+4. Grant the required Microsoft Graph delegated permissions: `Files.ReadWrite.All`, `Sites.ReadWrite.All`, `offline_access`
+5. Optionally grant admin consent — requires Azure AD Global Admin or Application Admin role. Skip this to let each user consent individually on their first login
+6. Write `azure.clientId` and `azure.tenantId` directly into `config.json`
+
+Then authenticate:
+
+```bash
+npm run dev
+open http://localhost:3333/auth/login   # macOS — or just paste the URL in a browser
+```
+
+Sign in with your Microsoft account. The token is saved to `tokenStorePath` and reloaded on restart, so you only need to do this once.
+
+### Manual setup (fallback)
+
+If you prefer the Azure portal or don't have the CLI installed:
+
+1. Go to [portal.azure.com](https://portal.azure.com) → **Azure Active Directory** → **App registrations** → **New registration**
+2. Name it `Claude Bridge`, set account type to *Single tenant*
+3. Under **Authentication** → **Add a platform** → **Mobile and desktop applications**
+   - Redirect URI: `http://localhost:3333/auth/callback`
+   - Enable **Allow public client flows**
+4. Under **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated**
+   - Add: `Files.ReadWrite.All`, `Sites.ReadWrite.All`, `offline_access`
+   - Optionally click **Grant admin consent for \<tenant\>**
+5. Copy the **Application (client) ID** and **Directory (tenant) ID** from the Overview page into `config.json`:
+
+```json
+{
+  "azure": {
+    "clientId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "tenantId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  }
+}
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `az` command not found | Azure CLI not installed | [Install Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) — or use Docker setup below |
+| `az login` opens wrong account | Multiple accounts | `az login` manually, then `az account set --subscription <id>` |
+| Running in Docker, no browser | Headless container | Use `docker compose --profile setup run --rm setup` — it switches to device code login automatically |
+| `/auth/login` returns 501 | `azure.clientId` is empty | Run `npm run setup:azure` |
+| `AADSTS65001` consent required | Permissions not granted | Re-run `npm run setup:azure` and grant admin consent, or accept the browser consent prompt |
+| Token expires mid-session | Access token TTL | Re-open `http://localhost:3333/auth/login` |
 
 ---
 
@@ -230,21 +284,55 @@ To rebuild after code changes:
 docker compose up --build --force-recreate
 ```
 
+### Azure setup in Docker
+
+The `setup` service runs `npm run setup:azure` inside an `mcr.microsoft.com/azure-cli` container that has Node.js added on top. Because containers are headless, the script automatically switches from browser-based login to **device code login** — it prints a short URL and a one-time code that you enter in any browser on any machine.
+
+```bash
+# 1. Ensure config.json exists (the script writes clientId/tenantId into it)
+cp config.example.json config.json
+
+# 2. Run setup — this builds the setup image on first run
+docker compose --profile setup run --rm setup
+```
+
+What happens step by step:
+
+1. The script detects `/.dockerenv` and switches to device code login
+2. Azure CLI prints something like:
+   ```
+   To sign in, use a web browser to open https://microsoft.com/devicelogin
+   and enter the code ABCD12345 to authenticate.
+   ```
+3. Open that URL in your browser (any machine), enter the code, and sign in
+4. The script proceeds through app registration, permissions, and config update
+5. On completion, `config.json` on the **host** is updated (via volume mount)
+6. Azure CLI credentials are saved to the `azure-setup-creds` named volume, so re-running setup doesn't require signing in again
+
+After setup completes, restart the main service to pick up the new credentials:
+
+```bash
+docker compose up --build --force-recreate
+```
+
 ---
 
 ## Development
 
 ```bash
-npm run dev        # run with tsx (no compile step)
-npm run build      # compile TypeScript → dist/
-npm start          # run compiled output
-npm test           # run vitest test suite
-npm run test:watch # vitest in watch mode
+npm run dev          # run with tsx (no compile step)
+npm run build        # compile TypeScript → dist/
+npm start            # run compiled output
+npm test             # run vitest test suite
+npm run test:watch   # vitest in watch mode
+npm run setup:azure  # automated Azure app registration
 ```
 
 ### Project Structure
 
 ```
+scripts/
+└── setup-azure.ts        Automated Azure App Registration
 src/
 ├── index.ts              Entry point — wires everything together
 ├── config.ts             Config schema (zod) + loader

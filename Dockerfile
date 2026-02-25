@@ -14,7 +14,25 @@ RUN npm run build
 # Prune to production deps only
 RUN npm ci --omit=dev
 
-# ── Stage 2: Runtime ──────────────────────────────────────────────────────────
+# ── Stage 2: Setup (Azure CLI + Node.js — only used by the setup service) ─────
+FROM mcr.microsoft.com/azure-cli AS setup
+WORKDIR /app
+
+# The azure-cli image is Alpine-based; add Node.js on top
+RUN apk add --no-cache nodejs npm
+
+# Install all deps (including devDeps — tsx is needed to run the script)
+COPY package*.json ./
+RUN npm ci
+
+COPY tsconfig.json ./
+COPY src ./src
+COPY scripts ./scripts
+COPY config.example.json ./config.example.json
+
+CMD ["npm", "run", "setup:azure"]
+
+# ── Stage 3: Runtime ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime
 WORKDIR /app
 

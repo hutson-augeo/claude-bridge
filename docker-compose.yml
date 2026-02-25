@@ -15,5 +15,23 @@ services:
       NODE_ENV: production
     restart: unless-stopped
 
+  # ── Azure setup service ──────────────────────────────────────────────────────
+  # Run once to register the Azure app and write credentials into config.json.
+  # Usage: docker compose --profile setup run --rm setup
+  setup:
+    build:
+      context: .
+      target: setup
+    volumes:
+      # config.json: writable so the script can write clientId/tenantId
+      - ./config.json:/app/config.json
+      # persist Azure CLI login between setup runs (avoids re-authenticating)
+      - azure-setup-creds:/root/.azure
+    stdin_open: true   # keep stdin open for interactive prompts
+    tty: true          # allocate a TTY for readline/device-code output
+    profiles:
+      - setup
+
 volumes:
   bridge-data:
+  azure-setup-creds:
