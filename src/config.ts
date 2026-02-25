@@ -17,7 +17,11 @@ export const configSchema = z.object({
 
 export type Config = z.infer<typeof configSchema>;
 
-const CONFIG_PATH = path.resolve(process.cwd(), 'config.json');
+// CLAUDE_BRIDGE_CONFIG lets Docker (and the setup script) redirect the config
+// file into a named volume without changing the source layout.
+const CONFIG_PATH  = process.env.CLAUDE_BRIDGE_CONFIG
+  ? path.resolve(process.env.CLAUDE_BRIDGE_CONFIG)
+  : path.resolve(process.cwd(), 'config.json');
 const EXAMPLE_PATH = path.resolve(process.cwd(), 'config.example.json');
 
 export function loadConfig(): Config {

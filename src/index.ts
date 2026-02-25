@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { buildApp } from './app.js';
@@ -58,8 +59,35 @@ async function main() {
   ];
   lines.forEach(l => process.stdout.write(l + '\n'));
 
+  // --- Next-step guidance ---------------------------------------------------
+  const inDocker = !!process.env.CLAUDE_BRIDGE_CONFIG || fs.existsSync('/.dockerenv');
+
   if (!config.azure.clientId) {
-    logger.warn('SharePoint disabled — set azure.clientId + azure.tenantId in config.json to enable.');
+    const setupCmd = inDocker
+      ? 'docker compose --profile setup run --rm setup'
+      : 'npm run setup:azure';
+    process.stdout.write([
+      '',
+      '  ┌─ SharePoint / OneDrive not configured ──────────────────────┐',
+      '  │                                                              │',
+      '  │  Run the Azure setup wizard to enable Microsoft 365:        │',
+      `  │    ${setupCmd.padEnd(57)}│`,
+      '  │                                                              │',
+      '  └──────────────────────────────────────────────────────────────┘',
+      '',
+    ].join('\n') + '\n');
+  } else if (!auth.getAccessToken()) {
+    process.stdout.write([
+      '',
+      '  ┌─ Sign in to Microsoft ──────────────────────────────────────┐',
+      '  │                                                              │',
+      '  │  Azure app is configured but no auth token found.           │',
+      '  │  Open this URL in your browser to sign in:                  │',
+      `  │    http://localhost:${config.httpPort}/auth/login${''.padEnd(33 - String(config.httpPort).length)}│`,
+      '  │                                                              │',
+      '  └──────────────────────────────────────────────────────────────┘',
+      '',
+    ].join('\n') + '\n');
   }
 
   // --- Graceful shutdown ---

@@ -242,77 +242,83 @@ If you prefer the Azure portal or don't have the CLI installed:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `az` command not found | Azure CLI not installed | [Install Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) — or use Docker setup below |
+| `az` command not found | Azure CLI not installed | [Install Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) — or use `docker compose --profile setup run --rm setup` (no host CLI needed) |
 | `az login` opens wrong account | Multiple accounts | `az login` manually, then `az account set --subscription <id>` |
-| Running in Docker, no browser | Headless container | Use `docker compose --profile setup run --rm setup` — it switches to device code login automatically |
-| `/auth/login` returns 501 | `azure.clientId` is empty | Run `npm run setup:azure` |
-| `AADSTS65001` consent required | Permissions not granted | Re-run `npm run setup:azure` and grant admin consent, or accept the browser consent prompt |
+| `/auth/login` returns 501 | `azure.clientId` is empty | Run the setup wizard — startup banner shows the exact command |
+| `AADSTS65001` consent required | Permissions not granted | Re-run setup wizard and choose to grant admin consent, or accept the browser consent prompt |
 | Token expires mid-session | Access token TTL | Re-open `http://localhost:3333/auth/login` |
 
 ---
 
 ## Running in Docker
 
-The Docker image builds TypeScript at image-build time and runs the compiled output in a slim Alpine container as a non-root user.
+Everything is automated — no files to create, no config to edit before you start.
 
 ```bash
-# 1. Create config — host must be 0.0.0.0 for Docker port mapping to work
-cp config.example.json config.json
-# Edit config.json: "host": "0.0.0.0"
-
-# 2. Optionally set tokenStorePath to the data volume for persistence
-# Edit config.json: "tokenStorePath": "./data/.tokens.json"
-
-# 3. Build and start
 docker compose up --build
-
-# 4. Verify
-curl http://localhost:3333/ping
 ```
 
-`docker-compose.yml` mounts:
+That's it. The container guides you through every remaining step at the terminal.
 
-| Host path    | Container path   | Mode      | Purpose                             |
-|--------------|------------------|-----------|-------------------------------------|
-| `config.json`| `/app/config.json`| read-only | Runtime configuration               |
-| `plugins/`   | `/app/plugins`   | read-only | Plugin `.js` files                  |
-| `bridge-data`| `/app/data`      | read-write| Persists auth tokens across restarts|
+### What happens on first run
 
-To rebuild after code changes:
+1. **Config is created automatically.** The entrypoint detects the empty data volume and writes `config.json` with Docker-appropriate defaults (`host: 0.0.0.0`, tokens stored in the volume).
 
-```bash
-docker compose up --build --force-recreate
-```
+2. **The server starts and tells you what to do next.** If SharePoint isn't configured the banner reads:
 
-### Azure setup in Docker
-
-The `setup` service runs `npm run setup:azure` inside an `mcr.microsoft.com/azure-cli` container that has Node.js added on top. Because containers are headless, the script automatically switches from browser-based login to **device code login** — it prints a short URL and a one-time code that you enter in any browser on any machine.
-
-```bash
-# 1. Ensure config.json exists (the script writes clientId/tenantId into it)
-cp config.example.json config.json
-
-# 2. Run setup — this builds the setup image on first run
-docker compose --profile setup run --rm setup
-```
-
-What happens step by step:
-
-1. The script detects `/.dockerenv` and switches to device code login
-2. Azure CLI prints something like:
    ```
-   To sign in, use a web browser to open https://microsoft.com/devicelogin
-   and enter the code ABCD12345 to authenticate.
+   ┌─ SharePoint / OneDrive not configured ─────────────────────┐
+   │                                                            │
+   │  Run the Azure setup wizard to enable Microsoft 365:      │
+   │    docker compose --profile setup run --rm setup          │
+   │                                                            │
+   └────────────────────────────────────────────────────────────┘
    ```
-3. Open that URL in your browser (any machine), enter the code, and sign in
-4. The script proceeds through app registration, permissions, and config update
-5. On completion, `config.json` on the **host** is updated (via volume mount)
-6. Azure CLI credentials are saved to the `azure-setup-creds` named volume, so re-running setup doesn't require signing in again
 
-After setup completes, restart the main service to pick up the new credentials:
+3. **Run setup in a second terminal** (no Azure CLI needed on your host — it's inside the image):
+
+   ```bash
+   docker compose --profile setup run --rm setup
+   ```
+
+   Because the container is headless, login uses **device code flow**: the script prints a URL and a short code. Open the URL in any browser, enter the code, and sign in. The script then creates the Azure app registration, grants permissions, and writes the credentials into the shared `bridge-data` volume.
+
+4. **Restart to load the new credentials:**
+
+   ```bash
+   docker compose restart claude-bridge
+   ```
+
+5. **Sign in.** The banner now reads:
+
+   ```
+   ┌─ Sign in to Microsoft ──────────────────────────────────────┐
+   │                                                             │
+   │  Azure app is configured but no auth token found.          │
+   │  Open this URL in your browser to sign in:                 │
+   │    http://localhost:3333/auth/login                        │
+   │                                                             │
+   └─────────────────────────────────────────────────────────────┘
+   ```
+
+   Open `http://localhost:3333/auth/login`, sign in once, and the token is saved to the volume — no login needed on future restarts.
+
+### Volumes
+
+Everything persists in Docker-managed named volumes — nothing written to your host directory.
+
+| Volume             | Mount point       | Contents                                     |
+|--------------------|-------------------|----------------------------------------------|
+| `bridge-data`      | `/app/data`       | `config.json` + auth tokens (shared by both services) |
+| `azure-setup-creds`| `/root/.azure`    | Azure CLI login (setup service only)         |
+
+### Useful commands
 
 ```bash
-docker compose up --build --force-recreate
+docker compose up --build               # start (builds image if needed)
+docker compose restart claude-bridge    # reload after config changes
+docker compose --profile setup run --rm setup   # run Azure setup wizard
+docker compose down -v                  # stop and delete all volumes (full reset)
 ```
 
 ---

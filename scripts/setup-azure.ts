@@ -17,7 +17,9 @@ import { stdin as input, stdout as output } from 'process';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CONFIG_PATH  = path.resolve(process.cwd(), 'config.json');
+const CONFIG_PATH  = process.env.CLAUDE_BRIDGE_CONFIG
+  ? path.resolve(process.env.CLAUDE_BRIDGE_CONFIG)
+  : path.resolve(process.cwd(), 'config.json');
 const EXAMPLE_PATH = path.resolve(process.cwd(), 'config.example.json');
 const APP_NAME     = 'Claude Bridge';
 
@@ -200,6 +202,11 @@ async function main() {
   ok('azure.tenantId written');
 
   // ── 9. Done ─────────────────────────────────────────────────────────────────
+  const restartCmd = isInContainer()
+    ? 'docker compose restart claude-bridge'
+    : 'npm run dev';
+  const authUrl = `http://localhost:${port}/auth/login`;
+
   console.log(`
 ╔══════════════════════════════════════════════╗
 ║  Setup complete!                             ║
@@ -207,15 +214,15 @@ async function main() {
 
   Next steps:
 
-  1. Start (or restart) the server
-       npm run dev
+  1. Restart the bridge server to load the new credentials:
+       ${restartCmd}
 
-  2. Open this URL in your browser to authenticate
-       http://localhost:${port}/auth/login
+  2. Open this URL in your browser to sign in:
+       ${authUrl}
 
   3. Sign in with your Microsoft account.
-     Your token is saved to disk — you won't need
-     to log in again after a server restart.
+     Your token is saved — you won't need to log in
+     again after a restart.
 `);
 
   rl.close();

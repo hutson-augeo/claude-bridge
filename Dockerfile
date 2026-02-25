@@ -48,6 +48,10 @@ COPY config.example.json ./config.example.json
 # Persistent directories for user data and plugins
 RUN mkdir -p /app/data /app/plugins && chown -R bridge:bridge /app
 
+# Entrypoint handles first-run config initialisation
+COPY --chown=bridge:bridge entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 USER bridge
 
 EXPOSE 3333 3334
@@ -55,4 +59,5 @@ EXPOSE 3333 3334
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -qO- http://localhost:3333/ping || exit 1
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "dist/index.js"]

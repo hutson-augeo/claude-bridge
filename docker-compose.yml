@@ -5,33 +5,40 @@ services:
       - "3333:3333"   # HTTP API
       - "3334:3334"   # WebSocket
     volumes:
-      # config.json: copy config.example.json → config.json, set host to 0.0.0.0
-      - ./config.json:/app/config.json:ro
-      # plugins: drop .js plugin files here; they load on startup
-      - ./plugins:/app/plugins:ro
-      # data: persists auth tokens across container restarts
+      # bridge-data persists config.json, auth tokens, and any runtime state.
+      # The entrypoint creates config.json automatically on first run.
       - bridge-data:/app/data
+      # Drop .js plugin files here; they load on startup (optional)
+      - ./plugins:/app/plugins:ro
     environment:
       NODE_ENV: production
+      # Tells the app (and setup script) where to read/write config inside the volume
+      CLAUDE_BRIDGE_CONFIG: /app/data/config.json
     restart: unless-stopped
 
   # ── Azure setup service ──────────────────────────────────────────────────────
   # Run once to register the Azure app and write credentials into config.json.
-  # Usage: docker compose --profile setup run --rm setup
+  #
+  #   docker compose --profile setup run --rm setup
+  #
+  # The setup image includes the Azure CLI. Because it runs headless it uses
+  # device code login — a URL + one-time code you open in any browser.
   setup:
     build:
       context: .
       target: setup
     volumes:
-      # config.json: writable so the script can write clientId/tenantId
-      - ./config.json:/app/config.json
-      # persist Azure CLI login between setup runs (avoids re-authenticating)
+      # Same data volume as the runtime — config changes are shared instantly
+      - bridge-data:/app/data
+      # Persist Azure CLI credentials so you don't re-login on repeated runs
       - azure-setup-creds:/root/.azure
+    environment:
+      CLAUDE_BRIDGE_CONFIG: /app/data/config.json
     stdin_open: true   # keep stdin open for interactive prompts
-    tty: true          # allocate a TTY for readline/device-code output
+    tty: true          # allocate a TTY for readline / device-code output
     profiles:
       - setup
 
 volumes:
-  bridge-data:
-  azure-setup-creds:
+  bridge-data:          # config + auth tokens (shared by runtime + setup)
+  azure-setup-creds:    # Azure CLI login credentials (setup only)
