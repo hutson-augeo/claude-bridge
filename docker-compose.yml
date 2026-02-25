@@ -1,0 +1,19 @@
+services:
+  claude-bridge:
+    build: .
+    ports:
+      - "3333:3333"   # HTTP API
+      - "3334:3334"   # WebSocket
+    volumes:
+      # config.json: copy config.example.json → config.json, set host to 0.0.0.0
+      - ./config.json:/app/config.json:ro
+      # plugins: drop .js plugin files here; they load on startup
+      - ./plugins:/app/plugins:ro
+      # data: persists auth tokens across container restarts
+      - bridge-data:/app/data
+    environment:
+      NODE_ENV: production
+    restart: unless-stopped
+
+volumes:
+  bridge-data:

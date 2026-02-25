@@ -1,0 +1,12 @@
+{
+  "host": "127.0.0.1",
+  "httpPort": 3333,
+  "wsPort": 3334,
+  "azure": {
+    "clientId": "",
+    "tenantId": ""
+  },
+  "pluginsDir": "./plugins",
+  "tokenStorePath": "./.tokens.json",
+  "logLevel": "info"
+}

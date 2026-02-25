@@ -1,0 +1,10 @@
+node_modules/
+dist/
+config.json
+.tokens.json
+data/
+*.log
+.DS_Store
+.git/
+tests/
+plugins/
